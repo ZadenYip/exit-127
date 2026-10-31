@@ -1,11 +1,14 @@
+import logging
 import os
 from collections.abc import Iterator
+from pydoc import text
 from typing import Annotated
 
 from fastapi import Depends, Request
-from sqlalchemy import URL, Engine
+from sqlalchemy import URL, Engine, text
 from sqlmodel import Session, create_engine
 
+logger = logging.getLogger(__name__)
 
 def create_pg_engine() -> Engine:
     user = os.getenv("POSTGRES_USER")
@@ -22,7 +25,19 @@ def create_pg_engine() -> Engine:
         port=int(os.getenv("POSTGRES_PORT", "5432")),
         database=database,
     )
-    return create_engine(url, pool_pre_ping=True)
+    
+    engine = create_engine(
+        url,
+        pool_pre_ping=True,
+        pool_timeout=5,
+        connect_args={"connect_timeout": 5},
+        hide_parameters=True,
+    )
+    
+    with engine.connect() as conn:
+        conn.execute(text("SELECT 1"))
+        logger.info("successfully connected to PostgreSQL database: %s", database)
+    return engine
 
 
 def get_session(request: Request) -> Iterator[Session]:
@@ -31,4 +46,4 @@ def get_session(request: Request) -> Iterator[Session]:
         yield session
 
 
-SessionDep = Annotated[Session, Depends(get_session)]
+PGSessionDep = Annotated[Session, Depends(get_session)]

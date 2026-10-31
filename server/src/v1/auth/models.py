@@ -1,6 +1,9 @@
 from typing import ClassVar
 
+from sqlalchemy import Integer
 from sqlmodel import Field, SQLModel
+
+from v1.auth.roles import Role
 
 
 class User(SQLModel, table=True):
@@ -9,5 +12,5 @@ class User(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     login_id: str = Field(max_length=16, unique=True)
     nickname: str = Field(max_length=16)
-    role: int
+    role: Role = Field(sa_type=Integer)
     password_hash: str = Field(max_length=72)

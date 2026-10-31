@@ -7,6 +7,7 @@ from sqlalchemy import Engine
 
 from infra.pg.pg import create_pg_engine
 from infra.redis import create_redis_client
+from log.logger import register_logger
 from v1.auth import router as auth_router
 
 
@@ -19,7 +20,7 @@ async def lifespan(app: FastAPI):
     redis_client: Redis | None = None
     try:
         pg_engine = create_pg_engine()
-        redis_client = create_redis_client()
+        redis_client = await create_redis_client()
         app.state.pg_engine = pg_engine
         app.state.redis = redis_client
         yield
@@ -32,6 +33,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+register_logger(app)
 app.include_router(auth_router.router, prefix="/v1")
 
 
