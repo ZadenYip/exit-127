@@ -5,9 +5,7 @@ from pydantic import BaseModel
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
-from infra.pg.pg import PGSessionDep
 from v1.auth.error.errors import SessionIdCollisionError
-from v1.auth.register import get_user_role
 from v1.auth.roles import Role
 
 
@@ -25,11 +23,10 @@ SESSION_ID_MAX_ATTEMPTS = 3
 async def create_login_session(
     *,
     redis: Redis,
-    session: PGSessionDep,
     user_id: int,
+    role: Role,
 ) -> str:
     logger.info("Creating Redis login session for user_id=%s", user_id)
-    role = get_user_role(session=session, user_id=user_id)
     session_data = UserSession(user_id=user_id, role=role).model_dump_json()
 
     for _ in range(SESSION_ID_MAX_ATTEMPTS):

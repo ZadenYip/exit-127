@@ -5,6 +5,7 @@ from fastapi import FastAPI, Response
 from redis.asyncio import Redis
 from sqlalchemy import Engine
 
+from error.handlers import register_exception_handlers
 from infra.pg.pg import create_pg_engine
 from infra.redis import create_redis_client
 from log.logger import register_logger
@@ -34,6 +35,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 register_logger(app)
+register_exception_handlers(app)
 app.include_router(auth_router.router, prefix="/v1")
 
 
