@@ -8,15 +8,14 @@ from starlette.concurrency import run_in_threadpool
 
 from infra.pg.pg import PGSessionDep
 from infra.redis import RedisDep
-from v1.auth.register import (
-    SESSION_TTL_SECONDS,
+from v1.auth.error.errors import (
     LoginIdAlreadyExistsError,
     SessionIdCollisionError,
     UserNotFoundError,
-    create_login_session,
-    register_user,
 )
+from v1.auth.register import register_user
 from v1.auth.roles import Role
+from v1.auth.session import SESSION_TTL_SECONDS, create_login_session
 
 
 router = APIRouter(prefix="/auth", tags=["身份认证"])
