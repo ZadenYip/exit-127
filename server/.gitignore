@@ -12,3 +12,5 @@ wheels/
 
 # environment variables
 .env
+
+.coverage
