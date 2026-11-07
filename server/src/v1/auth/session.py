@@ -1,11 +1,11 @@
 import logging
-import uuid
+from typing import Annotated
 
-from pydantic import BaseModel
-from redis.asyncio import Redis
+from fastapi import Cookie, Depends, HTTPException, status
+from pydantic import BaseModel, ValidationError
 from redis.exceptions import RedisError
 
-from v1.auth.error.errors import SessionIdCollisionError
+from infra.redis import RedisDep
 from v1.auth.roles import Role
 
 
@@ -17,37 +17,63 @@ class UserSession(BaseModel):
     role: Role
 
 
+SESSION_COOKIE_NAME = "__Host-session_id"
 SESSION_TTL_SECONDS = 24 * 60 * 60
-SESSION_ID_MAX_ATTEMPTS = 3
 
-async def create_login_session(
-    *,
-    redis: Redis,
-    user_id: int,
-    role: Role,
-) -> str:
-    logger.info("Creating Redis login session for user_id=%s", user_id)
-    session_data = UserSession(user_id=user_id, role=role).model_dump_json()
 
-    for _ in range(SESSION_ID_MAX_ATTEMPTS):
-        session_id = str(uuid.uuid4())
-        logger.info("Attempting Redis login-session insert for user_id=%s", user_id)
-        try:
-            created = await redis.set(
-                session_id,
-                session_data,
-                ex=SESSION_TTL_SECONDS,
-                nx=True,
-            )
-        except RedisError:
-            logger.exception(
-                "Redis failed to create login session for user_id=%s", user_id
-            )
-            raise
-        if created:
-            logger.info("Redis login session created for user_id=%s", user_id)
-            return session_id
+async def get_current_user(
+    redis: RedisDep,
+    session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None,
+) -> UserSession:
+    """Resolve the current user from the Redis-backed login session."""
+    if not session_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "UNAUTHENTICATED", "message": "请先登录"},
+        )
 
-    raise SessionIdCollisionError(
-        f"Could not create a unique session ID after {SESSION_ID_MAX_ATTEMPTS} attempts."
-    )
+    try:
+        session_data = await redis.get(session_id)
+    except RedisError:
+        logger.exception("Redis failed to load login session")
+        raise
+
+    if session_data is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "UNAUTHENTICATED", "message": "登录会话已失效"},
+        )
+
+    try:
+        return UserSession.model_validate_json(session_data)
+    except ValidationError as exc:
+        logger.warning("Invalid login session payload")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "UNAUTHENTICATED", "message": "登录会话无效"},
+        ) from exc
+
+
+CurrentUser = Annotated[UserSession, Depends(get_current_user)]
+
+
+async def require_teacher(cur_user: CurrentUser) -> UserSession:
+    if cur_user.role != Role.TEACHER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "FORBIDDEN", "message": "仅教师可执行此操作"},
+        )
+    return cur_user
+
+
+async def require_student(cur_user: CurrentUser) -> UserSession:
+    if cur_user.role != Role.STUDENT:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "FORBIDDEN", "message": "仅学生可执行此操作"},
+        )
+    return cur_user
+
+
+TeacherUser = Annotated[UserSession, Depends(require_teacher)]
+StudentUser = Annotated[UserSession, Depends(require_student)]

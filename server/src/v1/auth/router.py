@@ -3,19 +3,16 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from langchain_protocol import ErrorResponse
 from pydantic import BaseModel, Field
-from starlette.concurrency import run_in_threadpool
-
-from infra.pg.pg import PGSessionDep
-from infra.redis import RedisDep
+from v1.auth.deps import UserServiceDep
 from v1.auth.error.errors import LoginIdAlreadyExistsError
-from v1.auth.login import authenticate_user
-from v1.auth.register import register_user
 from v1.auth.roles import Role
-from v1.auth.session import SESSION_TTL_SECONDS, create_login_session
+from v1.auth.session import (
+    SESSION_COOKIE_NAME,
+    SESSION_TTL_SECONDS,
+)
 
 
 router = APIRouter(prefix="/auth", tags=["身份认证"])
-SESSION_COOKIE_NAME = "__Host-session_id"
 
 _LoginId = Annotated[str, Field(min_length=3, max_length=16)]
 _Password = Annotated[str, Field(min_length=8, max_length=16)]
@@ -74,15 +71,14 @@ async def register(
     req: RegisterReq,
     response: Response,
     request: Request,
-    session: PGSessionDep,
-    redis: RedisDep,
+    user_service: UserServiceDep,
 ):
     try:
-        user_id = await register_user(
-            session=session,
+        user_id, session_id = await user_service.register(
             log_id=req.log_id,
             password=req.password,
-            role=req.role)
+            role=req.role,
+        )
     except LoginIdAlreadyExistsError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -94,12 +90,6 @@ async def register(
 
     request.state.user_id = user_id
 
-    session_id = await create_login_session(
-        redis=redis,
-        user_id=user_id,
-        role=req.role,
-    )
-    
     # 设置登录会话 Cookie
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
@@ -126,12 +116,9 @@ async def login(
     req: LoginReq,
     response: Response,
     request: Request,
-    session: PGSessionDep,
-    redis: RedisDep,
+    user_service: UserServiceDep,
 ):
-    user = await run_in_threadpool(
-        authenticate_user,
-        session=session,
+    user = await user_service.authenticate(
         log_id=req.log_id,
         password=req.password,
     )
@@ -145,8 +132,7 @@ async def login(
         )
 
     request.state.user_id = user.user_id
-    session_id = await create_login_session(
-        redis=redis,
+    session_id = await user_service.create_login_session(
         user_id=user.user_id,
         role=user.role,
     )
