@@ -10,6 +10,6 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 COMMENT ON TABLE users IS '用户表';
-COMMENT ON COLUMN users.role IS '用户角色，使用整数表示';
-COMMENT ON COLUMN users.login_id IS '用户内部ID';
+COMMENT ON COLUMN users.role IS '用户角色：学生=1，教师=2，系统管理员=3';
+COMMENT ON COLUMN users.id IS '用户内部ID';
 COMMENT ON COLUMN users.login_id IS '用户登录ID';
